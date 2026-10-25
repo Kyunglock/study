@@ -12,3 +12,4 @@
 |---|---|---|---|
 | 01 | Filter vs Interceptor vs AOP | [docs/01-filter-interceptor-aop.md](docs/01-filter-interceptor-aop.md) | `com.study.pipeline` |
 | 02 | JDK 버전별 핵심 업데이트 (8 ~ 27) | [docs/02-jdk-versions.md](docs/02-jdk-versions.md) | — |
+| 03 | Spring Security 인증 / 인가 — 메뉴 · 기능 · 데이터 권한 | [docs/03-spring-security-authn-authz.md](docs/03-spring-security-authn-authz.md) | `com.study.security` |
