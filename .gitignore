@@ -24,3 +24,6 @@ Thumbs.db
 # Logs / env
 *.log
 .env
+
+# Crash dumps
+*.stackdump
