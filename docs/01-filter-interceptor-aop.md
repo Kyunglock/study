@@ -10,39 +10,93 @@
 
 ## 1. 한눈에 보는 요청 흐름
 
-```
- HTTP 요청
-    │
-    ▼
-┌──────────────────────── Servlet Container (Tomcat) ────────────────────────┐
-│                                                                            │
-│   Filter 1 → Filter 2 → ...            ◀── [Filter] 서블릿 스펙             │
-│                    │                                                       │
-│                    ▼                                                       │
-│   ┌──────────────── DispatcherServlet (Spring MVC) ──────────────────────┐ │
-│   │                                                                      │ │
-│   │   Interceptor.preHandle()        ◀── [Interceptor] 스프링 MVC          │ │
-│   │          │                                                           │ │
-│   │          ▼                                                           │ │
-│   │   ┌──────── Spring Container (Bean) ──────────────────────────────┐  │ │
-│   │   │  Controller → [AOP Proxy] → Service → [AOP Proxy] → Repository│  │ │
-│   │   │                    ▲                                          │  │ │
-│   │   │                    └── [AOP] 스프링 빈 메서드 호출              │  │ │
-│   │   └───────────────────────────────────────────────────────────────┘  │ │
-│   │          │                                                           │ │
-│   │   Interceptor.postHandle()   (정상 종료 시에만)                         │ │
-│   │   View 렌더링                                                         │ │
-│   │   Interceptor.afterCompletion()  (항상)                               │ │
-│   └──────────────────────────────────────────────────────────────────────┘ │
-│                    │                                                       │
-│   ... → Filter 2 → Filter 1  (chain.doFilter() 이후 코드)                   │
-└────────────────────────────────────────────────────────────────────────────┘
-    │
-    ▼
- HTTP 응답
+### 1.1 구조 — 누가 누구를 감싸고 있나 (플로우차트)
+
+```mermaid
+flowchart TB
+    Client([Client])
+
+    subgraph Tomcat["Servlet Container (Tomcat)"]
+        direction TB
+        F1["Filter 1"] --> F2["Filter 2 ..."]
+
+        subgraph MVC["DispatcherServlet (Spring MVC)"]
+            direction TB
+            HM["HandlerMapping: 핸들러 조회"] --> Pre["Interceptor.preHandle()"]
+            Pre -->|true| Ctrl["Controller"]
+            Pre -.->|false: 중단| Done
+            Ctrl --> Post["Interceptor.postHandle() - 정상 종료 시에만"]
+            Post --> View["View 렌더링 / 응답 작성"]
+            View --> After["Interceptor.afterCompletion() - 항상"]
+            After --> Done(("DispatcherServlet 종료"))
+
+            subgraph Beans["Spring Container (Bean)"]
+                direction LR
+                Proxy1["AOP Proxy"] --> Svc["Service"]
+                Svc --> Proxy2["AOP Proxy"] --> Repo["Repository"]
+            end
+            Ctrl --> Proxy1
+        end
+
+        F2 --> HM
+        Done --> F2b["Filter 2 ... chain.doFilter() 이후 코드"] --> F1b["Filter 1 chain.doFilter() 이후 코드"]
+    end
+
+    Client -->|HTTP 요청| F1
+    F1b -->|HTTP 응답| Client
 ```
 
 바깥에서 안쪽으로: **Filter ⊃ Interceptor ⊃ (Controller) ⊃ AOP**
+
+### 1.2 시간 순서 — 누가 언제 호출되나 (시퀀스 다이어그램)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client
+    box Servlet Container - Tomcat
+        participant F as Filter
+    end
+    box Spring MVC
+        participant DS as DispatcherServlet
+        participant I as Interceptor
+        participant C as Controller
+    end
+    box Spring Container - Bean
+        participant P as AOP Proxy
+        participant S as Service
+    end
+
+    Client->>F: HTTP 요청
+    Note over F: chain.doFilter() 이전 코드
+    F->>DS: chain.doFilter(request, response)
+    DS->>DS: HandlerMapping으로 핸들러 조회
+    DS->>I: preHandle(handler)
+
+    alt preHandle이 false 반환
+        I-->>DS: false
+        Note over DS,S: Controller, AOP, postHandle, afterCompletion 모두 실행 안 됨
+    else preHandle이 true 반환
+        I-->>DS: true
+        DS->>C: 핸들러 메서드 호출
+        C->>P: service.greet()
+        Note over P: @Around 전처리
+        P->>S: joinPoint.proceed()
+        S-->>P: 반환값
+        Note over P: @Around 후처리
+        P-->>C: 반환값
+        C-->>DS: 반환값 (@ResponseBody는 이때 바디 작성)
+        DS->>I: postHandle() - 정상 종료 시에만
+        DS->>DS: View 렌더링
+        DS->>I: afterCompletion() - 항상
+    end
+
+    DS-->>F: 반환
+    Note over F: chain.doFilter() 이후 코드
+    F-->>Client: HTTP 응답
+```
+
+> 예외가 나는 경우와 내부 호출(self-invocation) 경우의 실제 순서는 [4장](#4-실제-호출-순서-테스트로-검증됨)에서 다룬다.
 
 ---
 
